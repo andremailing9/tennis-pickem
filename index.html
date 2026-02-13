@@ -131,7 +131,12 @@
 // CONFIGURATION - Replace this URL with your published Google Sheet CSV URL
 // ===========================================================
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTDgm_J5tiSHKn6rtdgf5PHsYw7Nsm-nAEqZqegpuD6RX6bmSNWMnC1fy7a4i8SyD-ygLKXVkXnwICI/pub?gid=1560897758&single=true&output=csv';
+const MENS_RANKINGS_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTDgm_J5tiSHKn6rtdgf5PHsYw7Nsm-nAEqZqegpuD6RX6bmSNWMnC1fy7a4i8SyD-ygLKXVkXnwICI/pub?gid=2127038251&single=true&output=csv';
+const WOMENS_RANKINGS_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTDgm_J5tiSHKn6rtdgf5PHsYw7Nsm-nAEqZqegpuD6RX6bmSNWMnC1fy7a4i8SyD-ygLKXVkXnwICI/pub?gid=335539650&single=true&output=csv';
 // ===========================================================
+
+// Live rankings data (auto-fetched from ESPN via Google Sheets IMPORTHTML)
+let LIVE_RANKINGS = { mens: {}, womens: {} };
 
 let DATA = { mens: null, womens: null };
 let currentTab = 'mens';
@@ -222,12 +227,18 @@ function parseCSVToData(rows) {
     }
 
     if (section === 'YearEnd' && player && person) {
-      data[tourKey].yearEnd[person].players.push({ name: player, predicted: parseInt(predicted), currentRank: parseInt(currentRank) || null });
+      // Use live ranking if available, fallback to sheet's CurrentRank
+      const liveRank = lookupLiveRank(player, tourKey);
+      const cr = liveRank || parseInt(currentRank) || null;
+      data[tourKey].yearEnd[person].players.push({ name: player, predicted: parseInt(predicted), currentRank: cr });
     }
 
     if (section === 'MostImproved' && player && person) {
-      const pts = calcMostImprovedPoints(startRank, currentRank);
-      data[tourKey].mostImproved[person].players.push({ name: player, startRank: parseInt(startRank), currentRank: parseInt(currentRank), points: pts });
+      // Use live ranking for current rank if available
+      const liveRank = lookupLiveRank(player, tourKey);
+      const cr = liveRank || parseInt(currentRank);
+      const pts = calcMostImprovedPoints(startRank, cr);
+      data[tourKey].mostImproved[person].players.push({ name: player, startRank: parseInt(startRank), currentRank: cr, points: pts });
     }
   });
 
@@ -363,6 +374,55 @@ function switchTab(tab, btn) {
   renderScoreCards(tab); renderTournaments(tab); renderSideSections(tab);
 }
 
+function parseRankings(rows) {
+  // ESPN IMPORTHTML returns: RK, (blank), NAME, POINTS, AGE
+  // Column headers may vary, so we detect by position
+  const rankings = {};
+  rows.forEach(r => {
+    const vals = Object.values(r).map(v => (v || '').toString().trim());
+    // Find the rank (first numeric value) and name (first non-numeric non-empty string after rank)
+    let rank = null, name = null;
+    for (let i = 0; i < vals.length; i++) {
+      const num = parseInt(vals[i]);
+      if (rank === null && !isNaN(num) && num > 0 && num <= 500) { rank = num; continue; }
+      if (rank !== null && name === null && vals[i] && isNaN(parseInt(vals[i])) && vals[i].length > 1) { name = vals[i]; break; }
+    }
+    if (rank && name) {
+      // Normalize name: remove country codes, extra whitespace
+      name = name.replace(/\s+/g, ' ').trim();
+      rankings[name.toLowerCase()] = rank;
+    }
+  });
+  return rankings;
+}
+
+function fetchRankings(url) {
+  return new Promise((resolve) => {
+    Papa.parse(url, {
+      download: true,
+      header: true,
+      skipEmptyLines: true,
+      complete: function(results) { resolve(parseRankings(results.data)); },
+      error: function() { resolve({}); }
+    });
+  });
+}
+
+function lookupLiveRank(playerName, tourKey) {
+  const rankings = LIVE_RANKINGS[tourKey];
+  if (!rankings || Object.keys(rankings).length === 0) return null;
+  const nameLC = playerName.toLowerCase().trim();
+  // Direct match
+  if (rankings[nameLC]) return rankings[nameLC];
+  // Partial match (last name)
+  const parts = nameLC.split(' ');
+  const lastName = parts[parts.length - 1];
+  for (const [key, rank] of Object.entries(rankings)) {
+    if (key.includes(lastName) && (parts.length === 1 || key.includes(parts[0]))) return rank;
+  }
+  return null;
+}
+
 function loadData() {
   const url = SHEET_CSV_URL;
   if (url === 'YOUR_GOOGLE_SHEET_CSV_URL_HERE') {
@@ -374,19 +434,27 @@ function loadData() {
   document.getElementById('tournament-grid').innerHTML = '';
   document.getElementById('side-grid').innerHTML = '';
 
-  Papa.parse(url, {
-    download: true,
-    header: true,
-    skipEmptyLines: true,
-    complete: function(results) {
-      DATA = parseCSVToData(results.data);
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('last-updated').textContent = 'Last refreshed: ' + new Date().toLocaleString();
-      switchTab(currentTab, document.querySelector('.tab.active'));
-    },
-    error: function(err) {
-      document.getElementById('loading').innerHTML = `<div class="error-banner">Could not load data. Check your Google Sheet URL and make sure it's published to the web.<br><small>${err.message || ''}</small></div>`;
-    }
+  // Fetch all three sheets in parallel: picks + men's rankings + women's rankings
+  Promise.all([
+    new Promise((resolve, reject) => {
+      Papa.parse(url, {
+        download: true, header: true, skipEmptyLines: true,
+        complete: function(results) { resolve(results.data); },
+        error: function(err) { reject(err); }
+      });
+    }),
+    fetchRankings(MENS_RANKINGS_URL),
+    fetchRankings(WOMENS_RANKINGS_URL)
+  ]).then(([pickRows, mensRanks, womensRanks]) => {
+    LIVE_RANKINGS.mens = mensRanks;
+    LIVE_RANKINGS.womens = womensRanks;
+    DATA = parseCSVToData(pickRows);
+    document.getElementById('loading').style.display = 'none';
+    const rankCount = Object.keys(mensRanks).length + Object.keys(womensRanks).length;
+    document.getElementById('last-updated').textContent = 'Last refreshed: ' + new Date().toLocaleString() + (rankCount > 0 ? ' | Live rankings loaded' : '');
+    switchTab(currentTab, document.querySelector('.tab.active'));
+  }).catch(err => {
+    document.getElementById('loading').innerHTML = `<div class="error-banner">Could not load data. Check your Google Sheet URL and make sure it's published to the web.<br><small>${err.message || err || ''}</small></div>`;
   });
 }
 
