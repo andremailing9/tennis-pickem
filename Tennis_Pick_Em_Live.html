@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026 Tennis Pick 'Em Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --green-900: #1a3a1a; --green-800: #1B5E20; --green-700: #2E7D32;
+    --green-600: #388E3C; --green-500: #4CAF50; --green-400: #66BB6A;
+    --green-300: #81C784; --green-200: #A5D6A7; --green-100: #C8E6C9;
+    --green-50: #E8F5E9; --tennis-yellow: #C8E600; --gold: #FFD700;
+    --surface: #f8faf8; --card: #ffffff; --text: #1a1a1a;
+    --text-secondary: #555; --border: #e0e0e0;
+  }
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--surface); color: var(--text); min-height: 100vh; }
+  .hero { background: linear-gradient(135deg, var(--green-900) 0%, var(--green-700) 50%, #1a5a1a 100%); padding: 40px 20px 30px; text-align: center; position: relative; overflow: hidden; }
+  .hero::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle at 30% 50%, rgba(200,230,0,0.08) 0%, transparent 50%), radial-gradient(circle at 70% 50%, rgba(255,255,255,0.04) 0%, transparent 40%); }
+  .hero h1 { font-size: 2.8rem; font-weight: 900; color: white; letter-spacing: -1px; position: relative; }
+  .hero h1 span { color: var(--tennis-yellow); }
+  .hero .subtitle { color: var(--green-200); font-size: 1.05rem; font-weight: 400; margin-top: 6px; position: relative; }
+  .hero .season-badge { display: inline-block; background: rgba(200,230,0,0.15); border: 1px solid rgba(200,230,0,0.3); color: var(--tennis-yellow); padding: 4px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; margin-top: 12px; position: relative; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+  .scoreboard-section { margin-top: -20px; position: relative; z-index: 10; }
+  .score-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }
+  .score-card { background: var(--card); border-radius: 16px; padding: 28px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); text-align: center; position: relative; overflow: hidden; border: 2px solid transparent; transition: transform 0.2s, box-shadow 0.2s; }
+  .score-card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.12); }
+  .score-card.leading { border-color: var(--gold); }
+  .score-card.leading::after { content: '\1F451'; position: absolute; top: 12px; right: 16px; font-size: 1.6rem; }
+  .score-card .name { font-size: 1.1rem; font-weight: 700; color: var(--green-800); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .score-card .label { font-size: 0.8rem; color: var(--text-secondary); font-weight: 500; }
+  .score-card .total { font-size: 3.8rem; font-weight: 900; color: var(--green-700); line-height: 1.1; margin: 8px 0; }
+  .score-card .breakdown { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .score-card .breakdown .chip { background: var(--green-50); color: var(--green-800); padding: 3px 10px; border-radius: 12px; font-size: 0.72rem; font-weight: 600; }
+  .tabs { display: flex; gap: 4px; background: var(--green-100); padding: 4px; border-radius: 12px; margin-bottom: 24px; width: fit-content; }
+  .tab { padding: 10px 24px; border-radius: 10px; border: none; background: transparent; font-family: inherit; font-size: 0.95rem; font-weight: 600; color: var(--green-700); cursor: pointer; transition: all 0.2s; }
+  .tab.active { background: var(--green-700); color: white; box-shadow: 0 2px 8px rgba(46,125,50,0.3); }
+  .tournament-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 30px; }
+  .tournament-card { background: var(--card); border-radius: 14px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.06); border: 1px solid var(--border); }
+  .tournament-card .t-header { background: linear-gradient(135deg, var(--green-800), var(--green-600)); color: white; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; }
+  .tournament-card .t-header h3 { font-size: 1rem; font-weight: 700; }
+  .tournament-card .t-header .t-scores { display: flex; gap: 12px; font-size: 0.85rem; font-weight: 600; }
+  .tournament-card .t-header .t-scores .ts { background: rgba(255,255,255,0.15); padding: 2px 10px; border-radius: 8px; }
+  .tournament-card .t-header .t-scores .ts.win { background: rgba(200,230,0,0.25); color: var(--tennis-yellow); }
+  .t-body { padding: 0; } .t-body table { width: 100%; border-collapse: collapse; }
+  .t-body th { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); font-weight: 600; padding: 8px 10px 6px; text-align: left; border-bottom: 1px solid var(--border); }
+  .t-body td { font-size: 0.82rem; padding: 7px 10px; border-bottom: 1px solid #f0f0f0; }
+  .t-body tr:last-child td { border-bottom: none; }
+  .t-body .player-name { font-weight: 600; }
+  .t-body .seed-badge { display: inline-block; background: var(--green-50); color: var(--green-800); font-size: 0.7rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; min-width: 22px; text-align: center; }
+  .t-body .seed-badge.unseeded { background: #FFF3E0; color: #E65100; }
+  .t-body .finish-badge { font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 6px; }
+  .finish-winner { background: #FFF9C4; color: #F57F17; } .finish-finals { background: #E8F5E9; color: var(--green-800); }
+  .finish-sf { background: #E3F2FD; color: #1565C0; } .finish-qf { background: #F3E5F5; color: #7B1FA2; }
+  .finish-early { background: #f5f5f5; color: #999; }
+  .points-cell { font-weight: 700; color: var(--green-700); text-align: right; } .points-zero { color: #ccc; }
+  .winner-pick { color: var(--gold); font-size: 0.75rem; }
+  .person-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 10px 2px; color: var(--green-600); }
+  .divider-row td { padding: 0; height: 2px; background: var(--green-100); }
+  .side-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }
+  .section-card { background: var(--card); border-radius: 14px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.06); border: 1px solid var(--border); }
+  .section-card .s-header { background: linear-gradient(135deg, var(--green-800), var(--green-600)); color: white; padding: 12px 18px; font-weight: 700; font-size: 0.95rem; }
+  .section-card .s-body { padding: 16px; }
+  .section-card table { width: 100%; border-collapse: collapse; }
+  .section-card th { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); font-weight: 600; padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+  .section-card td { font-size: 0.82rem; padding: 6px 8px; border-bottom: 1px solid #f5f5f5; }
+  .section-card .person-header { font-size: 0.75rem; font-weight: 700; color: var(--green-700); text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 8px 4px; }
+  .rank-match { background: var(--green-50); color: var(--green-800); font-weight: 700; border-radius: 4px; padding: 1px 6px; }
+  .rank-close { background: #FFF9C4; color: #F57F17; font-weight: 600; border-radius: 4px; padding: 1px 6px; }
+  .rules-card { background: var(--card); border-radius: 14px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.06); border: 1px solid var(--border); margin-bottom: 30px; }
+  .rules-card .r-header { background: linear-gradient(135deg, #37474F, #546E7A); color: white; padding: 14px 18px; font-weight: 700; font-size: 0.95rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+  .rules-card .r-body { padding: 20px; display: none; font-size: 0.88rem; line-height: 1.7; color: var(--text-secondary); }
+  .rules-card .r-body.open { display: block; }
+  .rules-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
+  .rule-box h4 { color: var(--green-800); margin-bottom: 6px; font-size: 0.9rem; }
+  .rule-box .rule-table { width: 100%; } .rule-box .rule-table td { padding: 3px 8px; font-size: 0.82rem; }
+  .rule-box .rule-table td:last-child { text-align: right; font-weight: 600; }
+  .loading { text-align: center; padding: 60px 20px; color: var(--green-700); }
+  .loading .spinner { width: 40px; height: 40px; border: 4px solid var(--green-100); border-top-color: var(--green-700); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error-banner { background: #FFEBEE; color: #C62828; padding: 16px 20px; border-radius: 12px; margin: 20px; text-align: center; font-size: 0.9rem; }
+  .refresh-btn { position: fixed; bottom: 20px; right: 20px; background: var(--green-700); color: white; border: none; padding: 12px 20px; border-radius: 12px; font-family: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,0.2); z-index: 100; transition: all 0.2s; }
+  .refresh-btn:hover { background: var(--green-800); transform: translateY(-2px); }
+  .last-updated { font-size: 0.75rem; color: var(--green-200); margin-top: 6px; position: relative; }
+  footer { text-align: center; padding: 30px; color: #999; font-size: 0.8rem; }
+  @media (max-width: 768px) { .hero h1 { font-size: 1.8rem; } .score-cards, .side-grid { grid-template-columns: 1fr; } .tournament-grid { grid-template-columns: 1fr; } .score-card .total { font-size: 2.8rem; } }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>2026 Tennis <span>Pick 'Em</span></h1>
+  <div class="subtitle">Dad vs Andre — Season-Long Showdown</div>
+  <div class="season-badge">Season in Progress</div>
+  <div class="last-updated" id="last-updated"></div>
+</div>
+
+<div class="container">
+  <div class="scoreboard-section">
+    <div style="display:flex; justify-content:center; margin-bottom: 20px;">
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('mens',this)">Men's</button>
+        <button class="tab" onclick="switchTab('womens',this)">Women's</button>
+        <button class="tab" onclick="switchTab('combined',this)">Combined</button>
+      </div>
+    </div>
+    <div id="loading" class="loading"><div class="spinner"></div>Loading data from Google Sheets...</div>
+    <div class="score-cards" id="score-cards"></div>
+    <div class="tournament-grid" id="tournament-grid"></div>
+    <div class="side-grid" id="side-grid"></div>
+    <div class="rules-card">
+      <div class="r-header" onclick="this.nextElementSibling.classList.toggle('open')">Scoring Rules Quick Reference <span style="font-size:1.2rem">+</span></div>
+      <div class="r-body"><div class="rules-grid">
+        <div class="rule-box"><h4>Major Tournament Scoring</h4><table class="rule-table"><tr><td>Quarter-Finals</td><td>2 pts x bonus</td></tr><tr><td>Semi-Finals</td><td>3 pts x bonus</td></tr><tr><td>Finals</td><td>5 pts x bonus</td></tr><tr><td>Winner</td><td>Seed value (50 if NS)</td></tr><tr><td>Winner Prediction</td><td>+ Seed value again</td></tr></table></div>
+        <div class="rule-box"><h4>Seed Bonus Multipliers</h4><table class="rule-table"><tr><td>Seeds 1-8</td><td>1x</td></tr><tr><td>Seeds 9-16</td><td>2x</td></tr><tr><td>Seeds 17-32</td><td>4x</td></tr><tr><td>Unseeded</td><td>8x</td></tr></table></div>
+        <div class="rule-box"><h4>ATP/WTA Finals (No Bonuses)</h4><table class="rule-table"><tr><td>Group Stage Win</td><td>2 pts/win (max 3)</td></tr><tr><td>Semi-Finals</td><td>10 pts</td></tr><tr><td>Winner</td><td>20 pts</td></tr><tr><td>Correct Winner Pick</td><td>+ 10 pts</td></tr></table></div>
+        <div class="rule-box"><h4>Year-End Top 4</h4><table class="rule-table"><tr><td>Exact #1 match</td><td>25 pts</td></tr><tr><td>Exact #2-4 match</td><td>15 pts each</td></tr><tr><td>Right player, wrong pos</td><td>10 pts each</td></tr><tr><td>All 4 correct bonus</td><td>+ 20 pts</td></tr></table></div>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+<button class="refresh-btn" onclick="loadData()">Refresh Data</button>
+<footer>2026 Tennis Pick 'Em — Dad vs Andre</footer>
+
+<script>
+// ===========================================================
+// CONFIGURATION - Replace this URL with your published Google Sheet CSV URL
+// ===========================================================
+const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTDgm_J5tiSHKn6rtdgf5PHsYw7Nsm-nAEqZqegpuD6RX6bmSNWMnC1fy7a4i8SyD-ygLKXVkXnwICI/pub?gid=1560897758&single=true&output=csv';
+// ===========================================================
+
+let DATA = { mens: null, womens: null };
+let currentTab = 'mens';
+
+function getMultiplier(seed) {
+  if (seed === 'NS' || seed === '') return 8;
+  const s = parseInt(seed);
+  if (isNaN(s)) return 8;
+  if (s <= 8) return 1;
+  if (s <= 16) return 2;
+  if (s <= 32) return 4;
+  return 8;
+}
+
+function getSeedValue(seed) {
+  if (seed === 'NS' || seed === '') return 50;
+  const s = parseInt(seed);
+  return isNaN(s) ? 50 : s;
+}
+
+function calcTournamentPoints(seed, finish, isWinnerPick, isATPFinals, matchesWon) {
+  const mult = getMultiplier(seed);
+  const seedVal = getSeedValue(seed);
+
+  if (isATPFinals) {
+    const mw = parseInt(matchesWon) || 0;
+    if (finish === 'Winner') return mw * 2 + 10 + 20 + (isWinnerPick ? 10 : 0);
+    if (finish === 'Semi-Finals') return mw * 2 + 10;
+    return mw * 2;
+  }
+
+  if (finish === 'Winner') return (2+3+5) * mult + seedVal + (isWinnerPick ? seedVal : 0);
+  if (finish === 'Finals') return (2+3+5) * mult;
+  if (finish === 'Semi-Finals') return (2+3) * mult;
+  if (finish === 'Quarter-Finals') return 2 * mult;
+  return 0;
+}
+
+function calcYearEndPoints(predicted, actualRankings) {
+  const playerActual = actualRankings.find(a => a.name.toLowerCase().trim() === predicted.name.toLowerCase().trim());
+  if (!playerActual) return { points: 0, actual: null, currentRank: parseInt(predicted.currentRank) || null };
+  const actualRank = playerActual.rank;
+  const predRank = predicted.predicted;
+  if (actualRank === predRank) {
+    return { points: predRank === 1 ? 25 : 15, actual: actualRank, currentRank: parseInt(predicted.currentRank) || actualRank };
+  }
+  return { points: 10, actual: actualRank, currentRank: parseInt(predicted.currentRank) || actualRank };
+}
+
+function calcMostImprovedPoints(startRank, currentRank) {
+  const sr = parseInt(startRank), cr = parseInt(currentRank);
+  if (isNaN(sr) || isNaN(cr)) return 0;
+  if (cr > 128) return 0;
+  if (sr <= 128) return Math.max(0, (sr - cr) / 2);
+  return Math.max(0, (128 - cr) / 2);
+}
+
+function parseCSVToData(rows) {
+  const data = { mens: { tournaments: [], yearEnd: { actual: [], dad: { players: [], bonus: 0, total: 0 }, andre: { players: [], bonus: 0, total: 0 } }, mostImproved: { dad: { players: [], total: 0 }, andre: { players: [], total: 0 } } }, womens: { tournaments: [], yearEnd: { actual: [], dad: { players: [], bonus: 0, total: 0 }, andre: { players: [], bonus: 0, total: 0 } }, mostImproved: { dad: { players: [], total: 0 }, andre: { players: [], total: 0 } } } };
+
+  const tournamentMap = {};
+  const actualYE = { Mens: [], Womens: [] };
+
+  rows.forEach(r => {
+    const section = (r.Section || '').trim();
+    const tour = (r.Tour || '').trim();
+    const tourKey = tour === 'Mens' ? 'mens' : 'womens';
+    const tournament = (r.Tournament || '').trim();
+    const person = (r.Person || '').trim().toLowerCase();
+    const player = (r.Player || '').trim();
+    const seed = (r.Seed || '').trim();
+    const winnerPick = (r.WinnerPick || '').trim().toLowerCase() === 'yes';
+    const finish = (r.Finish || '').trim();
+    const predicted = (r.Predicted || '').trim();
+    const startRank = (r.StartRank || '').trim();
+    const currentRank = (r.CurrentRank || '').trim();
+
+    if (section === 'Tournament' && tournament && player) {
+      const key = `${tourKey}_${tournament}`;
+      if (!tournamentMap[key]) tournamentMap[key] = { name: tournament, tour: tourKey, dad: [], andre: [] };
+      const isATP = tournament.includes('Finals');
+      const points = calcTournamentPoints(seed, finish, winnerPick, isATP, r.MatchesWon || '0');
+      tournamentMap[key][person].push({ player, seed, finish, points, winnerPick });
+    }
+
+    if (section === 'ActualYE' && player) {
+      actualYE[tour].push({ name: player, rank: parseInt(predicted) });
+    }
+
+    if (section === 'YearEnd' && player && person) {
+      data[tourKey].yearEnd[person].players.push({ name: player, predicted: parseInt(predicted), currentRank: parseInt(currentRank) || null });
+    }
+
+    if (section === 'MostImproved' && player && person) {
+      const pts = calcMostImprovedPoints(startRank, currentRank);
+      data[tourKey].mostImproved[person].players.push({ name: player, startRank: parseInt(startRank), currentRank: parseInt(currentRank), points: pts });
+    }
+  });
+
+  // Build tournaments
+  const tournamentOrder = ['Australian Open', 'French Open', 'Wimbledon', 'US Open', 'ATP Finals', 'WTA Finals'];
+  for (const tourKey of ['mens', 'womens']) {
+    tournamentOrder.forEach(tName => {
+      const key = `${tourKey}_${tName}`;
+      const t = tournamentMap[key];
+      if (t) {
+        const dadTotal = t.dad.reduce((s, p) => s + p.points, 0);
+        const andreTotal = t.andre.reduce((s, p) => s + p.points, 0);
+        data[tourKey].tournaments.push({ name: tName, dad: { total: dadTotal, picks: t.dad }, andre: { total: andreTotal, picks: t.andre } });
+      } else if ((tourKey === 'mens' && tName !== 'WTA Finals') || (tourKey === 'womens' && tName !== 'ATP Finals')) {
+        data[tourKey].tournaments.push({ name: tName, dad: { total: 0, picks: [] }, andre: { total: 0, picks: [] } });
+      }
+    });
+  }
+
+  // Calculate Year-End points
+  for (const tourKey of ['mens', 'womens']) {
+    const tour = tourKey === 'mens' ? 'Mens' : 'Womens';
+    data[tourKey].yearEnd.actual = actualYE[tour] || [];
+    for (const person of ['dad', 'andre']) {
+      let total = 0;
+      data[tourKey].yearEnd[person].players = data[tourKey].yearEnd[person].players.map(p => {
+        const result = calcYearEndPoints(p, data[tourKey].yearEnd.actual);
+        total += result.points;
+        return { ...p, points: result.points, actual: result.actual, currentRank: result.currentRank || p.currentRank };
+      });
+      const allExact = data[tourKey].yearEnd[person].players.every(p => p.actual === p.predicted);
+      data[tourKey].yearEnd[person].bonus = allExact ? 20 : 0;
+      data[tourKey].yearEnd[person].total = total + (allExact ? 20 : 0);
+    }
+    // Most improved totals
+    for (const person of ['dad', 'andre']) {
+      data[tourKey].mostImproved[person].total = data[tourKey].mostImproved[person].players.reduce((s, p) => s + p.points, 0);
+    }
+  }
+
+  return data;
+}
+
+function getGrandTotals(tab) {
+  if (tab === 'combined') {
+    const m = getGrandTotals('mens'), w = getGrandTotals('womens');
+    return { dad: m.dad + w.dad, andre: m.andre + w.andre, dadBreakdown: {...m.dadBreakdown}, andreBreakdown: {...m.andreBreakdown} };
+  }
+  const d = DATA[tab];
+  if (!d) return { dad: 0, andre: 0, dadBreakdown: {}, andreBreakdown: {} };
+  let dadT = 0, andreT = 0; const dadB = {}, andreB = {};
+  d.tournaments.forEach(t => { dadT += t.dad.total; andreT += t.andre.total; if (t.dad.total || t.andre.total) { dadB[t.name] = t.dad.total; andreB[t.name] = t.andre.total; } });
+  dadT += d.yearEnd.dad.total; andreT += d.yearEnd.andre.total;
+  dadT += d.mostImproved.dad.total; andreT += d.mostImproved.andre.total;
+  if (d.yearEnd.dad.total || d.yearEnd.andre.total) { dadB['Year-End'] = d.yearEnd.dad.total; andreB['Year-End'] = d.yearEnd.andre.total; }
+  if (d.mostImproved.dad.total || d.mostImproved.andre.total) { dadB['Most Improved'] = d.mostImproved.dad.total; andreB['Most Improved'] = d.mostImproved.andre.total; }
+  return { dad: dadT, andre: andreT, dadBreakdown: dadB, andreBreakdown: andreB };
+}
+
+function finishClass(f) {
+  if (f === 'Winner') return 'finish-winner'; if (f === 'Finals') return 'finish-finals';
+  if (f === 'Semi-Finals') return 'finish-sf'; if (f === 'Quarter-Finals') return 'finish-qf'; return 'finish-early';
+}
+
+function renderScoreCards(tab) {
+  const totals = getGrandTotals(tab);
+  const dadL = totals.dad > totals.andre, andreL = totals.andre > totals.dad, tied = totals.dad === totals.andre;
+  const chips = bd => Object.entries(bd).filter(([,v])=>v>0).map(([k,v])=>`<span class="chip">${k}: ${v}</span>`).join('');
+  document.getElementById('score-cards').innerHTML = `
+    <div class="score-card ${dadL?'leading':''}"><div class="name">Dad</div><div class="label">${tied?'TIED':dadL?'LEADING':''}</div><div class="total">${totals.dad}</div><div class="label">Total Points</div><div class="breakdown">${chips(totals.dadBreakdown)}</div></div>
+    <div class="score-card ${andreL?'leading':''}"><div class="name">Andre</div><div class="label">${tied?'TIED':andreL?'LEADING':''}</div><div class="total">${totals.andre}</div><div class="label">Total Points</div><div class="breakdown">${chips(totals.andreBreakdown)}</div></div>`;
+}
+
+function renderTournaments(tab) {
+  if (tab === 'combined') { document.getElementById('tournament-grid').innerHTML = '<p style="text-align:center;color:#999;padding:20px;">Switch to Men\'s or Women\'s to see tournament details.</p>'; return; }
+  const d = DATA[tab]; if (!d) return; let html = '';
+  d.tournaments.forEach(t => {
+    const dadW = t.dad.total > t.andre.total, andreW = t.andre.total > t.dad.total, hasPicks = t.dad.picks.length > 0;
+    html += `<div class="tournament-card"><div class="t-header"><h3>${t.name}</h3><div class="t-scores"><span class="ts ${dadW?'win':''}">Dad: ${t.dad.total}</span><span class="ts ${andreW?'win':''}">Andre: ${t.andre.total}</span></div></div><div class="t-body">`;
+    if (hasPicks) {
+      html += `<table><tr><th>Player</th><th>Seed</th><th>Result</th><th style="text-align:right">Pts</th></tr>`;
+      html += `<tr><td colspan="4" class="person-label">Dad</td></tr>`;
+      t.dad.picks.forEach(p => { html += `<tr><td class="player-name">${p.player} ${p.winnerPick?'<span class="winner-pick">\u2605</span>':''}</td><td><span class="seed-badge ${p.seed==='NS'?'unseeded':''}">${p.seed}</span></td><td><span class="finish-badge ${finishClass(p.finish)}">${p.finish}</span></td><td class="points-cell ${p.points===0?'points-zero':''}">${p.points}</td></tr>`; });
+      html += `<tr class="divider-row"><td colspan="4"></td></tr><tr><td colspan="4" class="person-label">Andre</td></tr>`;
+      t.andre.picks.forEach(p => { html += `<tr><td class="player-name">${p.player} ${p.winnerPick?'<span class="winner-pick">\u2605</span>':''}</td><td><span class="seed-badge ${p.seed==='NS'?'unseeded':''}">${p.seed}</span></td><td><span class="finish-badge ${finishClass(p.finish)}">${p.finish}</span></td><td class="points-cell ${p.points===0?'points-zero':''}">${p.points}</td></tr>`; });
+      html += `</table>`;
+    } else { html += `<div style="padding:24px;text-align:center;color:#bbb;font-size:0.85rem;">Picks not yet made</div>`; }
+    html += `</div></div>`;
+  });
+  document.getElementById('tournament-grid').innerHTML = html;
+}
+
+function renderSideSections(tab) {
+  if (tab === 'combined') { document.getElementById('side-grid').innerHTML = ''; return; }
+  const d = DATA[tab]; if (!d) return; let html = '';
+
+  html += `<div class="section-card"><div class="s-header">Year-End Top 4 Predictions</div><div class="s-body">`;
+  if (d.yearEnd.actual.length) {
+    html += `<div style="margin-bottom:12px;padding:8px 10px;background:#F5F5F5;border-radius:8px;font-size:0.78rem;color:#666;"><strong style="color:#333;">Current Actual Rankings:</strong> ${d.yearEnd.actual.map(a=>`#${a.rank} ${a.name}`).join(', ')}</div>`;
+  }
+  for (const [person, label] of [['dad','Dad'],['andre','Andre']]) {
+    html += `<div class="person-header">${label} \u2014 ${d.yearEnd[person].total} pts</div><table><tr><th>Player</th><th>Predicted</th><th>Actual</th><th style="text-align:right">Pts</th></tr>`;
+    d.yearEnd[person].players.forEach(p => {
+      const inTop4 = p.actual !== null && p.actual !== undefined;
+      const match = inTop4 && p.actual === p.predicted;
+      let actualHtml;
+      if (match) actualHtml = `<span class="rank-match">#${p.actual}</span>`;
+      else if (inTop4) actualHtml = `<span class="rank-close">#${p.actual}</span>`;
+      else actualHtml = p.currentRank ? `<span style="background:#E0E0E0;color:#777;font-size:0.75rem;padding:1px 6px;border-radius:4px">#${p.currentRank}</span>` : '\u2014';
+      html += `<tr><td>${p.name}</td><td style="text-align:center;font-weight:600">#${p.predicted}</td><td style="text-align:center">${actualHtml}</td><td class="points-cell ${p.points===0?'points-zero':''}">${p.points}</td></tr>`;
+    });
+    html += `</table>`;
+  }
+  html += `</div></div>`;
+
+  html += `<div class="section-card"><div class="s-header">Most Improved Picks</div><div class="s-body">`;
+  for (const [person, label] of [['dad','Dad'],['andre','Andre']]) {
+    html += `<div class="person-header">${label} \u2014 ${d.mostImproved[person].total} pts</div><table><tr><th>Player</th><th>Start</th><th>Current</th><th style="text-align:right">Pts</th></tr>`;
+    d.mostImproved[person].players.forEach(p => {
+      const moved = p.startRank - p.currentRank;
+      html += `<tr><td>${p.name}</td><td style="text-align:center">#${p.startRank}</td><td style="text-align:center">#${p.currentRank} <span style="font-size:0.7rem;color:${moved>0?'#4CAF50':moved<0?'#f44336':'#999'}">${moved>0?'\u2191'+moved:moved<0?'\u2193'+Math.abs(moved):'\u2014'}</span></td><td class="points-cell ${p.points===0?'points-zero':''}">${p.points}</td></tr>`;
+    });
+    html += `</table>`;
+  }
+  html += `</div></div>`;
+  document.getElementById('side-grid').innerHTML = html;
+}
+
+function switchTab(tab, btn) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderScoreCards(tab); renderTournaments(tab); renderSideSections(tab);
+}
+
+function loadData() {
+  const url = SHEET_CSV_URL;
+  if (url === 'YOUR_GOOGLE_SHEET_CSV_URL_HERE') {
+    document.getElementById('loading').innerHTML = '<div class="error-banner">Setup needed: Open this HTML file in a text editor and replace <code>YOUR_GOOGLE_SHEET_CSV_URL_HERE</code> with your published Google Sheet CSV URL. See the setup guide for instructions.</div>';
+    return;
+  }
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('score-cards').innerHTML = '';
+  document.getElementById('tournament-grid').innerHTML = '';
+  document.getElementById('side-grid').innerHTML = '';
+
+  Papa.parse(url, {
+    download: true,
+    header: true,
+    skipEmptyLines: true,
+    complete: function(results) {
+      DATA = parseCSVToData(results.data);
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('last-updated').textContent = 'Last refreshed: ' + new Date().toLocaleString();
+      switchTab(currentTab, document.querySelector('.tab.active'));
+    },
+    error: function(err) {
+      document.getElementById('loading').innerHTML = `<div class="error-banner">Could not load data. Check your Google Sheet URL and make sure it's published to the web.<br><small>${err.message || ''}</small></div>`;
+    }
+  });
+}
+
+// Load on page open
+loadData();
+</script>
+</body>
+</html>
